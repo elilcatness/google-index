@@ -11,3 +11,5 @@ class Domain(SqlAlchemyBase):
     login = Column(String, nullable=True)
     password = Column(String, nullable=True)
     api_key = Column(String, nullable=True)
+
+    verbose_names = {'login': 'Логин', 'password': 'Пароль', 'api_key': 'API ключ'}
