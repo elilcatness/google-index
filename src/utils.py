@@ -4,7 +4,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 
+from src.constants import QUEUE_LIMIT
 from src.db import db_session
+from src.db.models.domain import Domain
 from src.db.models.state import State
 
 
@@ -41,7 +43,8 @@ def save_state(user_id: int, callback: str, data: dict):
         session.commit()
 
 
-def build_pagination(array: list[tuple], pag_step: int, current_page: int):
+def build_pagination(array: list[tuple], pag_step: int, current_page: int,
+                     with_main_menu: bool = True):
     array_length = len(array)
     pages_count = (
         array_length // pag_step if array_length / pag_step == array_length // pag_step
@@ -59,4 +62,14 @@ def build_pagination(array: list[tuple], pag_step: int, current_page: int):
             pag_block.append(InlineKeyboardButton('»', callback_data='next_page'))
         buttons.append(pag_block)
     buttons.append([InlineKeyboardButton('Вернуться назад', callback_data='back')])
+    if with_main_menu:
+        buttons.append([InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')])
     return InlineKeyboardMarkup(buttons), pages_count
+
+
+def refresh_limit(context: CallbackContext):
+    with db_session.create_session() as session:
+        for domain in session.query(Domain).filter(Domain.user_id == int(context.job.name)).all():
+            domain.limit = QUEUE_LIMIT
+            session.add(domain)
+            session.commit()

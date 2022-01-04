@@ -12,10 +12,10 @@ def menu(update: Update, context: CallbackContext):
         context.user_data['id'] = update.message.from_user.id
     buttons = [[InlineKeyboardButton('Добавить новый домен', callback_data='add_new_domain')]]
     with db_session.create_session() as session:
-        if session.query(Domain).all():
-            buttons += [[InlineKeyboardButton('Отправить страницы в индекс', callback_data='send_to_index')],
+        if session.query(Domain).filter(Domain.user_id == context.user_data['id']).all():
+            buttons += [[InlineKeyboardButton('Отправить страницы в индекс', callback_data='index_menu')],
                         [InlineKeyboardButton('Редактировать', callback_data='edit_menu')],
                         [InlineKeyboardButton('Удалить', callback_data='delete_menu')],
-                        [InlineKeyboardButton('Доступные домены и очереди', callback_data='domains & queues')]]
+                        [InlineKeyboardButton('Доступные домены и очереди', callback_data='view_menu')]]
     markup = InlineKeyboardMarkup(buttons)
     return context.bot.send_message(context.user_data['id'], 'Меню', reply_markup=markup), 'menu'

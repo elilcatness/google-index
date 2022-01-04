@@ -1,12 +1,10 @@
-from random import choice
-
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode
 from telegram.ext import CallbackContext
 
-from src.constants import PAGINATION_STEP
 from src.db import db_session
 from src.db.models.domain import Domain
-from src.utils import delete_last_message, build_pagination
+from src.general import DomainGeneral
+from src.utils import delete_last_message
 
 
 @delete_last_message
@@ -22,49 +20,22 @@ class DomainEdit:
     @staticmethod
     @delete_last_message
     def show_all(_, context: CallbackContext):
-        with db_session.create_session() as session:
-            data = [(d.url, d.id) for d in session.query(Domain).all()]
-        if not context.user_data.get('domain_edit_pagination'):
-            context.user_data['domain_edit_pagination'] = 1
-        markup, pages_count = build_pagination(
-            data, PAGINATION_STEP, context.user_data['domain_edit_pagination'])
-        context.user_data['domain_edit_pages_count'] = pages_count
-        return (context.bot.send_message(
-            context.user_data['id'],
-            '<b>Выберите домен</b>\n\n<i>Для выбора страницы в пагинации '
-            'также можно отправить её номер</i>',
-            reply_markup=markup, parse_mode=ParseMode.HTML),
-                'domain_edit.show_all')
-
-    @staticmethod
-    def set_next_page(_, context):
-        context.user_data['domain_edit_pagination'] += 1
-        return DomainEdit.show_all(_, context)
-
-    @staticmethod
-    def set_previous_page(_, context):
-        context.user_data['domain_edit_pagination'] -= 1
-        return DomainEdit.show_all(_, context)
-
-    @staticmethod
-    def set_page(update: Update, context: CallbackContext):
-        n = int(update.message.text)
-        if not(1 <= n <= context.user_data['domain_edit_pages_count']):
-            update.message.reply_text('Введён неверный номер страницы')
-        else:
-            context.user_data['domain_edit_pagination'] = n
-        return DomainEdit.show_all(update, context)
+        args, kwargs = DomainGeneral.show_all(_, context)
+        args[1] = args[1] % 'для редактирования'
+        return context.bot.send_message(*args, **kwargs), 'domain_edit.show_all'
 
     @staticmethod
     @delete_last_message
     def show_domain_properties(_, context: CallbackContext):
+        if context.match and context.match.string.isdigit():
+            context.user_data['domain_id'] = int(context.match.string)
         with db_session.create_session() as session:
-            domain = session.query(Domain).get(int(context.match.string))
-            context.user_data['domain_edit_id'] = domain.id
+            domain = session.query(Domain).get(context.user_data['domain_id'])
             markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(val, callback_data=f'{domain.id} {key}')]
                  for key, val in domain.verbose_names.items()] +
-                [[InlineKeyboardButton('Вернуться назад', callback_data='back')]])
+                [[InlineKeyboardButton('Вернуться назад', callback_data='back'),
+                  InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
             return (context.bot.send_message(
                 context.user_data['id'], f'<b>Домен:</b> {domain.url}',
                 reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True),
@@ -72,8 +43,34 @@ class DomainEdit:
 
     @staticmethod
     @delete_last_message
-    def edit_property(_, context: CallbackContext):
-        print(context.match.string)
+    def ask_to_edit_property(_, context: CallbackContext):
+        key = context.match.string.split()[-1]
+        context.user_data['domain_key_to_change'] = key
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton('Вернуться назад', callback_data='back'),
+                                        InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
+        with db_session.create_session() as session:
+            domain = session.query(Domain).get(context.user_data['domain_id'])
+            return (context.bot.send_message(context.user_data['id'],
+                                             f'На что Вы хотите заменить <b>{domain.verbose_names[key]}</b>?\n\n'
+                                             f'<b>Текущее значение:</b> {getattr(domain, key)}',
+                                             reply_markup=markup, parse_mode=ParseMode.HTML,
+                                             disable_web_page_preview=True),
+                    'domain_edit.ask_to_edit_property')
+
+    @staticmethod
+    @delete_last_message
+    def edit_property(update: Update, context: CallbackContext):
+        with db_session.create_session() as session:
+            domain = session.query(Domain).get(context.user_data['domain_id'])
+            setattr(domain, context.user_data['domain_key_to_change'], update.message.text)
+            session.add(domain)
+            session.commit()
+            context.bot.send_message(
+                context.user_data['id'],
+                f'Переменная <b>{domain.verbose_names[context.user_data.pop("domain_key_to_change")]}</b> '
+                f'домена {domain.url} была обновлена',
+                parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        return DomainEdit.show_domain_properties(update, context)
 
 
 class QueueEdit:
