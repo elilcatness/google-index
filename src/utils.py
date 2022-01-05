@@ -17,6 +17,9 @@ def delete_last_message(func):
                 context.bot.deleteMessage(context.user_data['id'], context.user_data.pop('message_id'))
             except BadRequest:
                 pass
+        while context.user_data.get('messages_to_delete'):
+            context.bot.deleteMessage(context.user_data['id'],
+                                      context.user_data['messages_to_delete'].pop(0))
         output = func(update, context)
         if isinstance(output, tuple):
             msg, callback = output
@@ -73,3 +76,7 @@ def refresh_limit(context: CallbackContext):
             domain.limit = QUEUE_LIMIT
             session.add(domain)
             session.commit()
+
+
+def delete_message(_, context: CallbackContext):
+    context.bot.delete_message(context.user_data['id'], int(context.match.string.split()[-1]))

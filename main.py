@@ -1,10 +1,11 @@
-from datetime import time
 import json
 import os
-from pytz import utc
+from datetime import time
+
 from dotenv import load_dotenv
+from pytz import utc
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
-                          CallbackQueryHandler, ConversationHandler, Dispatcher)
+                          CallbackQueryHandler, ConversationHandler, CallbackContext)
 
 from src.add import Addition
 from src.db import db_session
@@ -12,22 +13,28 @@ from src.db.models.state import State
 from src.delete import DomainDelete, delete_menu
 from src.edit import DomainEdit, edit_menu
 from src.general import DomainGeneral
-from src.index import DomainIndex
+from src.index import DomainIndex, process_queue
 from src.start import menu
+from src.utils import refresh_limit, delete_message
 from src.view import view_menu, DomainView
-from src.utils import refresh_limit
 
 
 def load_states(updater: Updater, conv_handler: ConversationHandler):
     with db_session.create_session() as session:
         for state in session.query(State).all():
             conv_handler._conversations[(state.user_id, state.user_id)] = state.callback
-            updater.dispatcher.user_data[state.user_id] = json.loads(state.data)
+            user_data = json.loads(state.data)
+            updater.dispatcher.user_data[state.user_id] = user_data
+            context = CallbackContext(updater.dispatcher)
+            context._bot = updater.bot
             t = time(3, tzinfo=utc)
             print(f'{t=}')
             for job in updater.dispatcher.job_queue.get_jobs_by_name(str(state.user_id)):
                 job.schedule_removal()
-            updater.dispatcher.job_queue.run_daily(refresh_limit, t, name=str(state.user_id))
+            context.job_queue.run_daily(refresh_limit, t, name=str(state.user_id),
+                                        context=context)
+            context.job_queue.run_once(process_queue, 1, name=str(state.user_id),
+                                       context=context)
 
 
 def main():
@@ -80,14 +87,18 @@ def main():
             'domain_view.info': [CallbackQueryHandler(DomainView.show_all, pattern='back')],
             'domain_index.show_all': [CallbackQueryHandler(DomainIndex.ask_mode, pattern=r'[0-9]+'),
                                       CallbackQueryHandler(menu, pattern='back')],
-            'domain_index.ask_mode': [CallbackQueryHandler(DomainIndex.get_queue, pattern='[1-2]'),
+            'domain_index.ask_mode': [CallbackQueryHandler(DomainIndex.get_queue,
+                                                           pattern='(URL_UPDATED)|(URL_DELETED)'),
                                       CallbackQueryHandler(DomainIndex.show_all, pattern='back')],
-            'domain_index.get_queue': [MessageHandler(Filters.regex(r'^https?://*'), DomainIndex.correct_urls)],
+            'domain_index.get_queue': [MessageHandler(Filters.regex(r'^https?://*') |
+                                                      Filters.document, DomainIndex.correct_urls),
+                                       CallbackQueryHandler(DomainIndex.ask_mode, pattern='back')],
             'domain_index.correct_urls': [CallbackQueryHandler(DomainIndex.create_queue, pattern='proceed'),
                                           CallbackQueryHandler(DomainIndex.get_queue, pattern='back')]
         },
         fallbacks=[CommandHandler('start', menu),
-                   CallbackQueryHandler(menu, pattern='menu')]
+                   CallbackQueryHandler(menu, pattern='menu'),
+                   CallbackQueryHandler(delete_message, pattern='delete [0-9]+')]
     )
     updater.dispatcher.add_handler(conv_handler)
     load_states(updater, conv_handler)

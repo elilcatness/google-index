@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Boolean
 
 from src.db.db_session import SqlAlchemyBase
 from src.constants import QUEUE_LIMIT
@@ -13,6 +13,6 @@ class Domain(SqlAlchemyBase):
     login = Column(String, nullable=True)
     password = Column(String, nullable=True)
     json_keys = Column(String, nullable=True)
-    limit = Column(Integer, default=QUEUE_LIMIT)
+    out_of_limit = Column(Boolean, default=False)
 
     verbose_names = {'login': 'Логин', 'password': 'Пароль', 'json_keys': 'JSON-ключи'}

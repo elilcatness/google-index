@@ -1,11 +1,16 @@
+import csv
+import os
+from datetime import datetime
+
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode
 from telegram.ext import CallbackContext
 
-from src.constants import QUEUE_LIMIT
+from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
 from src.general import DomainGeneral
+from src.indexation import GoogleIndexationAPI
 from src.utils import delete_last_message
 
 
@@ -22,8 +27,8 @@ class DomainIndex:
     def ask_mode(_, context: CallbackContext):
         if context.match and context.match.string.isdigit():
             context.user_data['domain_id'] = int(context.match.string)
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton('URL UPDATED', callback_data='1')],
-                                       [InlineKeyboardButton('URL DELETED', callback_data='2')],
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton('URL UPDATED', callback_data='URL_UPDATED')],
+                                       [InlineKeyboardButton('URL DELETED', callback_data='URL_DELETED')],
                                        [InlineKeyboardButton('Вернуться назад', callback_data='back'),
                                         InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
         return (context.bot.send_message(context.user_data['id'], 'Выберите тип запросов',
@@ -34,39 +39,57 @@ class DomainIndex:
     def get_queue(_, context: CallbackContext):
         if context.match:
             context.user_data['index_method'] = context.match.string
-        print(context.user_data)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Вернуться назад', callback_data='back'),
                                         InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
         return context.bot.send_message(
             context.user_data['id'],
-            'Добавьте страницы (каждая с новой строки) и нажмите отправить',
+            'Добавьте страницы (каждая с новой строки) и '
+            'нажмите отправить или отправьте текстовый файл с ссылками, если они не вмещаются в одно сообщение',
             reply_markup=markup), 'domain_index.get_queue'
 
     @staticmethod
     @delete_last_message
     def correct_urls(update: Update, context: CallbackContext):
-        raw_urls = update.message.text.split('\n')
+        if update.message.document:
+            try:
+                raw_urls = update.message.document.get_file().download_as_bytearray().decode('utf-8').split('\n')
+            except UnicodeDecodeError:
+                context.bot.send_message(context.user_data['id'],
+                                         'У файла неверный формат, или он повреждён')
+                return DomainIndex.get_queue(update, context)
+        else:
+            raw_urls = update.message.text.split('\n')
         with db_session.create_session() as session:
             domain = session.query(Domain).get(context.user_data['domain_id'])
             urls = []
             for u in raw_urls:
                 if u not in urls and u.startswith('http') and domain.url in u:
                     urls.append(u)
-        context.user_data['urls'] = urls
+        context.user_data['urls'] = urls[:]
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Всё верно', callback_data='proceed')],
                                        [InlineKeyboardButton('Ввести ссылки заново', callback_data='back')],
                                        [InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
-        return (context.bot.send_message(context.user_data['id'],
-                                         '<b>Список ссылок был обработан следующим образом:</b> \n\n' +
-                                         '\n'.join(urls),
-                                         reply_markup=markup, parse_mode=ParseMode.HTML,
-                                         disable_web_page_preview=True),
-                'domain_index.correct_urls')
+        first = True
+        messages_to_delete = []
+        msg = None
+        while urls:
+            text = '<b>Список ссылок был обработан следующим образом:</b> \n\n' if first else ''
+            while len(text) < MESSAGE_MAX_LENGTH and urls:
+                text += urls.pop(0) + '\n'
+            msg = context.bot.send_message(context.user_data['id'], text,
+                                           parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            messages_to_delete.append(msg.message_id)
+            if first:
+                first = False
+        msg.edit_reply_markup(markup)
+        context.user_data['messages_to_delete'] = messages_to_delete[:-1]
+        return msg, 'domain_index.correct_urls'
 
     @staticmethod
     @delete_last_message
     def create_queue(_, context: CallbackContext):
         urls = context.user_data['urls']
+        print(f'{urls=}')
         groups = [urls[i:i + QUEUE_LIMIT] if i + QUEUE_LIMIT < len(urls)
                   else urls[i:len(urls) + 1] for i in range(0, len(urls), QUEUE_LIMIT)]
         with db_session.create_session() as session:
@@ -80,7 +103,7 @@ class DomainIndex:
                                   number=last_n + i + 1,
                                   method=context.user_data['index_method'],
                                   urls=','.join(group),
-                                  json_keys=context.user_data['json_keys']))
+                                  start_length=len(group)))
                 session.commit()
         prefix = 'Создана очередь на отправку' if len(groups) == 1 else 'Созданы очереди на отправку'
         method = 'URL UPDATED' if context.user_data['index_method'] == '1' else 'URL DELETED'
@@ -90,9 +113,71 @@ class DomainIndex:
                 "\n".join([f"{domain_url}_{i} [{len(groups[i - last_n - 1])}/{QUEUE_LIMIT}]"
                            for i in range(last_n + 1, last_n + len(groups) + 1)])),
             parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-        context.job_queue.run_once(process_queue, )
+        context.job_queue.run_once(process_queue, 1, name=str(context.user_data['id']))
         return DomainIndex.show_all(_, context)
 
 
 def process_queue(context: CallbackContext):
-    pass
+    user_id = int(context.job.name)
+    with db_session.create_session() as session:
+        queues = session.query(Queue).filter(Queue.user_id == user_id).all()
+        queues_temp = queues[:]
+        while queues_temp:
+            queue = queues_temp.pop(0)
+            if queue and not queue.domain.out_of_limit:
+                break
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
+        markup_with_edit = None
+        api = GoogleIndexationAPI(queue.id, queue.domain.json_keys, queue.urls.split(','),
+                                  queue.domain.url, queue.method, queue.data)
+        try:
+            output, status = api.indexation_worker()
+        except Exception as e:
+            msg = context.bot.send_message(user_id,
+                                           f'<b>Очередь</b> {queue.domain.url}_{queue.number}\n\n'
+                                           f'<b>Возникла ошибка:</b> {e}',
+                                           disable_web_page_preview=True, parse_mode=ParseMode.HTML,
+                                           reply_markup=markup)
+            markup_with_edit = InlineKeyboardMarkup([[InlineKeyboardButton('Удалить сообщение',
+                                                                           callback_data=f'delete {msg.message_id}'),
+                                                      InlineKeyboardButton('Показать меню',
+                                                                           callback_data='menu')]])
+            msg.edit_reply_markup(markup_with_edit)
+            context.job_queue.run_once(process_queue, 1, name=str(user_id))
+            return
+        if status == 'out-of-limit':
+            queue.domain.out_of_limit = True
+            session.add(queue.domain)
+            session.commit()
+            msg_text = f'прервана ввиду превышения лимита в {QUEUE_LIMIT} запросов в {QUEUE_LIMIT_PER}'
+            schedule_delete = False
+        if status != 'out-of-limit' and queue.domain.out_of_limit:
+            queue.domain.out_of_limit = False
+            session.delete(queue.domain)
+            session.commit()
+            msg_text = f'успешно отработана!'
+            schedule_delete = True
+        dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '_').split('.')[0]
+        filename = f'{queue.domain.url.split("//")[1]}_{queue.number}_{dt}.csv'
+        print(f'{output=}')
+        with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
+            writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
+            writer.writerows(output)
+        with open(filename, encoding='utf-8') as f:
+            msg = context.bot.send_document(
+                user_id, f,
+                caption=f'<b>Очередь</b> {queue.domain.url}_{queue.number} <b>{msg_text}</b>\n\n'
+                        f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                        f'Проиндексировано <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
+                reply_markup=markup, parse_mode=ParseMode.HTML)
+            if not markup_with_edit:
+                markup_with_edit = InlineKeyboardMarkup([[InlineKeyboardButton('Удалить сообщение',
+                                                                               callback_data=f'delete {msg.message_id}'),
+                                                          InlineKeyboardButton('Показать меню',
+                                                                               callback_data='menu')]])
+            msg.edit_reply_markup(markup_with_edit)
+        if schedule_delete:
+            session.delete(queue)
+            session.commit()
+        os.remove(filename)
+    context.job_queue.run_once(process_queue, 1, name=str(user_id))
