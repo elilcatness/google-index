@@ -126,7 +126,7 @@ class DomainIndex:
 def process_queue(context: CallbackContext):
     user_id = int(context.job.name)
     with db_session.create_session() as session:
-        for queue in session.query(Queue).filter((Queue.user_id == user_id) & (Queue.is_broken == 0)).all():
+        for queue in session.query(Queue).filter((Queue.user_id == user_id) & (Queue.is_broken == False)).all():
             markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
             markup_with_edit = None
             if (queue.domain.out_of_limit and queue.last_request and (
