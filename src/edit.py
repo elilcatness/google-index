@@ -16,9 +16,14 @@ def edit_menu(_, context: CallbackContext):
     for key in 'domain_pagination', 'queue_pagination':
         if context.user_data.get(key):
             context.user_data.pop(key)
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton('Данные домена', callback_data='edit_domains')],
-                                   [InlineKeyboardButton('Очередь', callback_data='edit_queues')],
-                                   [InlineKeyboardButton('Вернуться назад', callback_data='menu')]])
+    with db_session.create_session() as session:
+        if session.query(Queue).first():
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Домены', callback_data='edit_domains')],
+                                           [InlineKeyboardButton('Очереди', callback_data='edit_queues')],
+                                           [InlineKeyboardButton('Вернуться назад', callback_data='back')]])
+        else:
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Домены', callback_data='edit_domains')],
+                                           [InlineKeyboardButton('Вернуться назад', callback_data='back')]])
     return context.bot.send_message(context.user_data['id'], 'Выберите тип объекта для редактирования',
                                     reply_markup=markup), 'edit_menu'
 

@@ -14,9 +14,14 @@ def view_menu(_, context: CallbackContext):
     for key in 'domain_pagination', 'queue_pagination':
         if context.user_data.get(key):
             context.user_data.pop(key)
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton('Домены', callback_data='view_domains')],
-                                   [InlineKeyboardButton('Очереди', callback_data='view_queues')],
-                                   [InlineKeyboardButton('Вернуться назад', callback_data='back')]])
+    with db_session.create_session() as session:
+        if session.query(Queue).first():
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Домены', callback_data='view_domains')],
+                                           [InlineKeyboardButton('Очереди', callback_data='view_queues')],
+                                           [InlineKeyboardButton('Вернуться назад', callback_data='back')]])
+        else:
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Домены', callback_data='view_domains')],
+                                           [InlineKeyboardButton('Вернуться назад', callback_data='back')]])
     return (context.bot.send_message(context.user_data['id'], 'Выберите тип объекта для просмотра',
                                      reply_markup=markup), 'view_menu')
 
