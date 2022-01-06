@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, ForeignKey, Text, Boolean, DateTime
 from sqlalchemy.orm import relation
 
 from src.db.db_session import SqlAlchemyBase
@@ -14,6 +14,9 @@ class Queue(SqlAlchemyBase):
     domain = relation('Domain', foreign_keys=domain_id)
     method = Column(Text)
     urls = Column(Text)
+    start_length = Column(Integer)
+    last_request = Column(DateTime, nullable=True)
     data = Column(Text, nullable=True)
     in_progress = Column(Boolean, default=False)
-    start_length = Column(Integer)
+    is_broken = Column(Boolean, default=False)
+    limit_message_sent = Column(Boolean, default=False)

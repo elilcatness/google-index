@@ -10,13 +10,13 @@ from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
 from src.add import Addition
 from src.db import db_session
 from src.db.models.state import State
-from src.delete import DomainDelete, delete_menu
-from src.edit import DomainEdit, edit_menu
-from src.general import DomainGeneral
+from src.delete import DomainDelete, delete_menu, QueueDelete
+from src.edit import DomainEdit, edit_menu, QueueEdit
+from src.general import DomainGeneral, QueueGeneral
 from src.index import DomainIndex, process_queue
 from src.start import menu
-from src.utils import refresh_limit, delete_message
-from src.view import view_menu, DomainView
+from src.utils import delete_message
+from src.view import view_menu, DomainView, QueueView
 
 
 def load_states(updater: Updater, conv_handler: ConversationHandler):
@@ -31,8 +31,6 @@ def load_states(updater: Updater, conv_handler: ConversationHandler):
             print(f'{t=}')
             for job in updater.dispatcher.job_queue.get_jobs_by_name(str(state.user_id)):
                 job.schedule_removal()
-            context.job_queue.run_daily(refresh_limit, t, name=str(state.user_id),
-                                        context=context)
             context.job_queue.run_once(process_queue, 1, name=str(state.user_id),
                                        context=context)
 
@@ -57,7 +55,7 @@ def main():
             'addition.json_keys': [MessageHandler(Filters.text | Filters.document, Addition.finish),
                                    CallbackQueryHandler(Addition.ask_password, pattern='back')],
             'edit_menu': [CallbackQueryHandler(DomainEdit.show_all, pattern='edit_domains'),
-                          CallbackQueryHandler(menu, pattern='back')],
+                          CallbackQueryHandler(QueueEdit.show_all_domains, pattern='edit_queues')],
             'domain_edit.show_all': [CallbackQueryHandler(DomainEdit.show_domain_properties, pattern=r'[0-9]+'),
                                      CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
                                      CallbackQueryHandler(DomainEdit.show_all, pattern='refresh'),
@@ -70,7 +68,22 @@ def main():
             'domain_edit.ask_to_edit_property': [MessageHandler(Filters.text, DomainEdit.edit_property),
                                                  CallbackQueryHandler(DomainEdit.show_domain_properties,
                                                                       pattern='back')],
-            'delete_menu': [CallbackQueryHandler(DomainDelete.show_all, pattern='domains'),
+            'queue_edit.show_all_domains': [
+                CallbackQueryHandler(QueueEdit.show_all, pattern=r'[0-9]+'),
+                CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
+                CallbackQueryHandler(QueueEdit.show_all_domains, pattern='refresh'),
+                CallbackQueryHandler(DomainGeneral.set_previous_page, pattern='prev_page'),
+                MessageHandler(Filters.regex(r'[0-9]+'), DomainGeneral.set_page),
+                CallbackQueryHandler(edit_menu, pattern='back')],
+            'queue_edit.show_all': [CallbackQueryHandler(QueueEdit.ask_urls, pattern='[0-9]+'),
+                                    CallbackQueryHandler(QueueGeneral.set_next_page, pattern='next_page'),
+                                    CallbackQueryHandler(QueueEdit.show_all, pattern='refresh'),
+                                    CallbackQueryHandler(QueueGeneral.set_previous_page, pattern='prev_page'),
+                                    CallbackQueryHandler(QueueEdit.show_all_domains, pattern='back')],
+            'queue_edit.ask_urls': [MessageHandler(Filters.text | Filters.document, QueueEdit.correct_urls),
+                                    CallbackQueryHandler(QueueEdit.show_all, pattern='back')],
+            'delete_menu': [CallbackQueryHandler(DomainDelete.show_all, pattern='delete_domains'),
+                            CallbackQueryHandler(QueueDelete.show_all_domains, pattern='delete_queues'),
                             CallbackQueryHandler(menu, pattern='back')],
             'domain_delete.show_all': [CallbackQueryHandler(DomainDelete.confirm, pattern=r'[0-9]+'),
                                        CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
@@ -80,18 +93,45 @@ def main():
                                        CallbackQueryHandler(edit_menu, pattern='back')],
             'domain_delete.confirm': [CallbackQueryHandler(DomainDelete.delete, pattern='delete'),
                                       CallbackQueryHandler(DomainDelete.show_all, pattern='back')],
-            'view_menu': [CallbackQueryHandler(DomainView.show_all, pattern='domains'),
+            'queue_delete.show_all_domains': [
+                CallbackQueryHandler(QueueDelete.show_all, pattern=r'[0-9]+'),
+                CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
+                CallbackQueryHandler(QueueDelete.show_all_domains, pattern='refresh'),
+                CallbackQueryHandler(DomainGeneral.set_previous_page, pattern='prev_page'),
+                MessageHandler(Filters.regex(r'[0-9]+'), DomainGeneral.set_page),
+                CallbackQueryHandler(delete_menu, pattern='back')],
+            'queue_delete.show_all': [CallbackQueryHandler(QueueDelete.confirm, pattern='[0-9]+'),
+                                      CallbackQueryHandler(QueueGeneral.set_next_page, pattern='next_page'),
+                                      CallbackQueryHandler(QueueDelete.show_all, pattern='refresh'),
+                                      CallbackQueryHandler(QueueGeneral.set_previous_page, pattern='prev_page'),
+                                      CallbackQueryHandler(QueueDelete.show_all_domains, pattern='back')],
+            'queue_delete.confirm': [CallbackQueryHandler(QueueDelete.delete, pattern='delete'),
+                                     CallbackQueryHandler(QueueDelete.show_all, pattern='back')],
+            'view_menu': [CallbackQueryHandler(DomainView.show_all, pattern='view_domains'),
+                          CallbackQueryHandler(QueueView.show_all_domains, pattern='view_queues'),
                           CallbackQueryHandler(menu, pattern='back')],
             'domain_view.show_all': [CallbackQueryHandler(DomainView.show_info, pattern=r'[0-9]+'),
                                      CallbackQueryHandler(view_menu, pattern='back')],
             'domain_view.info': [CallbackQueryHandler(DomainView.show_all, pattern='back')],
+            'queue_view.show_all_domains': [
+                CallbackQueryHandler(QueueView.show_all, pattern=r'[0-9]+'),
+                CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
+                CallbackQueryHandler(QueueView.show_all_domains, pattern='refresh'),
+                CallbackQueryHandler(DomainGeneral.set_previous_page, pattern='prev_page'),
+                MessageHandler(Filters.regex(r'[0-9]+'), DomainGeneral.set_page),
+                CallbackQueryHandler(view_menu, pattern='back')],
+            'queue_view.show_all': [CallbackQueryHandler(QueueView.show_info, pattern='[0-9]+'),
+                                    CallbackQueryHandler(QueueGeneral.set_next_page, pattern='next_page'),
+                                    CallbackQueryHandler(QueueView.show_all, pattern='refresh'),
+                                    CallbackQueryHandler(QueueGeneral.set_previous_page, pattern='prev_page'),
+                                    CallbackQueryHandler(QueueView.show_all_domains, pattern='back')],
+            'queue_view.info': [CallbackQueryHandler(QueueView.show_all, pattern='back')],
             'domain_index.show_all': [CallbackQueryHandler(DomainIndex.ask_mode, pattern=r'[0-9]+'),
                                       CallbackQueryHandler(menu, pattern='back')],
             'domain_index.ask_mode': [CallbackQueryHandler(DomainIndex.get_queue,
                                                            pattern='(URL_UPDATED)|(URL_DELETED)'),
                                       CallbackQueryHandler(DomainIndex.show_all, pattern='back')],
-            'domain_index.get_queue': [MessageHandler(Filters.regex(r'^https?://*') |
-                                                      Filters.document, DomainIndex.correct_urls),
+            'domain_index.get_queue': [MessageHandler(Filters.text | Filters.document, DomainIndex.correct_urls),
                                        CallbackQueryHandler(DomainIndex.ask_mode, pattern='back')],
             'domain_index.correct_urls': [CallbackQueryHandler(DomainIndex.create_queue, pattern='proceed'),
                                           CallbackQueryHandler(DomainIndex.get_queue, pattern='back')]

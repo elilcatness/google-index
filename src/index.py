@@ -5,7 +5,7 @@ from datetime import datetime
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode
 from telegram.ext import CallbackContext
 
-from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER
+from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER, QUEUE_LIMIT_CHECK_RATE
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
@@ -65,6 +65,9 @@ class DomainIndex:
             for u in raw_urls:
                 if u not in urls and u.startswith('http') and domain.url in u:
                     urls.append(u)
+            if not urls:
+                context.bot.send_message(context.user_data['id'], 'Ни один URL не прошёл фильтрацию!')
+                return DomainIndex.get_queue(update, context)
         context.user_data['urls'] = urls[:]
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Всё верно', callback_data='proceed')],
                                        [InlineKeyboardButton('Ввести ссылки заново', callback_data='back')],
@@ -89,14 +92,13 @@ class DomainIndex:
     @delete_last_message
     def create_queue(_, context: CallbackContext):
         urls = context.user_data['urls']
-        print(f'{urls=}')
         groups = [urls[i:i + QUEUE_LIMIT] if i + QUEUE_LIMIT < len(urls)
                   else urls[i:len(urls) + 1] for i in range(0, len(urls), QUEUE_LIMIT)]
         with db_session.create_session() as session:
             domain = session.query(Domain).get(context.user_data['domain_id'])
             domain_url = domain.url
-            last_n = len(session.query(Queue).filter(Queue.user_id == context.user_data['id'] and
-                                                     Queue.domain_id == context.user_data['domain_id']).all())
+            last_n = len(session.query(Queue).filter(
+                (Queue.user_id == context.user_data['id']) & (Queue.domain_id == context.user_data['domain_id'])).all())
             for i, group in enumerate(groups):
                 session.add(Queue(user_id=context.user_data['id'],
                                   domain_id=context.user_data['domain_id'],
@@ -105,79 +107,100 @@ class DomainIndex:
                                   urls=','.join(group),
                                   start_length=len(group)))
                 session.commit()
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
         prefix = 'Создана очередь на отправку' if len(groups) == 1 else 'Созданы очереди на отправку'
-        method = 'URL UPDATED' if context.user_data['index_method'] == '1' else 'URL DELETED'
-        context.bot.send_message(
+        msg = context.bot.send_message(
             context.user_data['id'],
-            f'<b>{prefix}: \n\n</b>%s\n\n<b>Метод:</b> {method}' % (
+            f'<b>{prefix}: \n\n</b>%s\n\n<b>Метод:</b> {context.user_data["index_method"]}' % (
                 "\n".join([f"{domain_url}_{i} [{len(groups[i - last_n - 1])}/{QUEUE_LIMIT}]"
                            for i in range(last_n + 1, last_n + len(groups) + 1)])),
-            parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-        context.job_queue.run_once(process_queue, 1, name=str(context.user_data['id']))
+            reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        msg.edit_reply_markup(InlineKeyboardMarkup(
+            [[InlineKeyboardButton('Удалить сообщение', callback_data=f'delete {msg.message_id}'),
+              InlineKeyboardButton('Показать меню', callback_data='menu')]]))
+        if not context.job_queue.get_jobs_by_name(str(context.user_data['id'])):
+            context.job_queue.run_once(process_queue, 1, name=str(context.user_data['id']))
         return DomainIndex.show_all(_, context)
 
 
 def process_queue(context: CallbackContext):
     user_id = int(context.job.name)
     with db_session.create_session() as session:
-        queues = session.query(Queue).filter(Queue.user_id == user_id).all()
-        queues_temp = queues[:]
-        while queues_temp:
-            queue = queues_temp.pop(0)
-            if queue and not queue.domain.out_of_limit:
-                break
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
-        markup_with_edit = None
-        api = GoogleIndexationAPI(queue.id, queue.domain.json_keys, queue.urls.split(','),
-                                  queue.domain.url, queue.method, queue.data)
-        try:
-            output, status = api.indexation_worker()
-        except Exception as e:
-            msg = context.bot.send_message(user_id,
-                                           f'<b>Очередь</b> {queue.domain.url}_{queue.number}\n\n'
-                                           f'<b>Возникла ошибка:</b> {e}',
-                                           disable_web_page_preview=True, parse_mode=ParseMode.HTML,
-                                           reply_markup=markup)
-            markup_with_edit = InlineKeyboardMarkup([[InlineKeyboardButton('Удалить сообщение',
-                                                                           callback_data=f'delete {msg.message_id}'),
-                                                      InlineKeyboardButton('Показать меню',
-                                                                           callback_data='menu')]])
-            msg.edit_reply_markup(markup_with_edit)
-            context.job_queue.run_once(process_queue, 1, name=str(user_id))
-            return
-        if status == 'out-of-limit':
-            queue.domain.out_of_limit = True
-            session.add(queue.domain)
-            session.commit()
-            msg_text = f'прервана ввиду превышения лимита в {QUEUE_LIMIT} запросов в {QUEUE_LIMIT_PER}'
-            schedule_delete = False
-        if status != 'out-of-limit' and queue.domain.out_of_limit:
-            queue.domain.out_of_limit = False
-            session.delete(queue.domain)
-            session.commit()
-            msg_text = f'успешно отработана!'
-            schedule_delete = True
-        dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '_').split('.')[0]
-        filename = f'{queue.domain.url.split("//")[1]}_{queue.number}_{dt}.csv'
-        print(f'{output=}')
-        with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
-            writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
-            writer.writerows(output)
-        with open(filename, encoding='utf-8') as f:
-            msg = context.bot.send_document(
-                user_id, f,
-                caption=f'<b>Очередь</b> {queue.domain.url}_{queue.number} <b>{msg_text}</b>\n\n'
-                        f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                        f'Проиндексировано <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
-                reply_markup=markup, parse_mode=ParseMode.HTML)
-            if not markup_with_edit:
-                markup_with_edit = InlineKeyboardMarkup([[InlineKeyboardButton('Удалить сообщение',
-                                                                               callback_data=f'delete {msg.message_id}'),
-                                                          InlineKeyboardButton('Показать меню',
-                                                                               callback_data='menu')]])
-            msg.edit_reply_markup(markup_with_edit)
-        if schedule_delete:
-            session.delete(queue)
-            session.commit()
-        os.remove(filename)
-    context.job_queue.run_once(process_queue, 1, name=str(user_id))
+        for queue in session.query(Queue).filter((Queue.user_id == user_id) & (Queue.is_broken == 0)).all():
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
+            markup_with_edit = None
+            if (queue.domain.out_of_limit and queue.last_request and (
+                    datetime.utcnow() - queue.last_request).total_seconds() < QUEUE_LIMIT_CHECK_RATE):
+                continue
+            api = GoogleIndexationAPI(queue.id, queue.domain.json_keys, queue.urls.split(','),
+                                      queue.domain.url, queue.method, queue.data)
+            try:
+                output, status = api.indexation_worker()
+            except Exception as e:
+                msg = context.bot.send_message(user_id,
+                                               f'<b>Очередь #{queue.number}</b> домена {queue.domain.url}\n\n'
+                                               f'<b>Возникла ошибка:</b> {str(e)}',
+                                               disable_web_page_preview=True, parse_mode=ParseMode.HTML,
+                                               reply_markup=markup)
+                markup_with_edit = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton('Удалить сообщение',
+                                           callback_data=f'delete {msg.message_id}'),
+                      InlineKeyboardButton('Показать меню',
+                                           callback_data='menu')]])
+                msg.edit_reply_markup(markup_with_edit)
+                queue.is_broken = True
+                session.add(queue)
+                session.commit()
+                continue
+            if status == 'out-of-limit':
+                queue.domain.out_of_limit = True
+                queue.last_request = datetime.utcnow()
+                session.add(queue)
+                session.add(queue.domain)
+                session.commit()
+                msg_text = f'прервана ввиду превышения лимита в {QUEUE_LIMIT} запросов в {QUEUE_LIMIT_PER}'
+                schedule_delete = False
+            else:
+                if queue.domain.out_of_limit:
+                    queue.domain.out_of_limit = False
+                if queue.limit_message_sent:
+                    queue.limit_message_sent = False
+                msg_text = f'успешно обработана!'
+                schedule_delete = True
+            if not queue.limit_message_sent:
+                dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '~').split('.')[0]
+                filename = f'{queue.domain.url.split("//")[1]}_{queue.number}_{dt}.csv'
+                print(f'{output=}')
+                with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
+                    writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
+                    writer.writerows(output)
+                with open(filename, encoding='utf-8') as f:
+                    msg = context.bot.send_document(
+                        user_id, f,
+                        caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
+                                f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                                f'Проиндексировано <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
+                        reply_markup=markup, parse_mode=ParseMode.HTML)
+                    if not markup_with_edit:
+                        markup_with_edit = InlineKeyboardMarkup(
+                            [[InlineKeyboardButton('Удалить сообщение',
+                                                   callback_data=f'delete {msg.message_id}'),
+                              InlineKeyboardButton('Показать меню',
+                                                   callback_data='menu')]])
+                    msg.edit_reply_markup(markup_with_edit)
+                    if status == 'OK':
+                        queue.is_broken = True
+                        session.add(queue)
+                        session.commit()
+                if queue.domain.out_of_limit:
+                    queue.limit_message_sent = True
+                    session.add(queue)
+                    session.commit()
+                try:
+                    os.remove(filename)
+                except PermissionError:
+                    pass
+            if schedule_delete:
+                session.delete(queue)
+                session.commit()
+    context.job_queue.run_once(process_queue, 5, name=str(user_id))

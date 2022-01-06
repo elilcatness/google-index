@@ -70,13 +70,5 @@ def build_pagination(array: list[tuple], pag_step: int, current_page: int,
     return InlineKeyboardMarkup(buttons), pages_count
 
 
-def refresh_limit(context: CallbackContext):
-    with db_session.create_session() as session:
-        for domain in session.query(Domain).filter(Domain.user_id == int(context.job.name)).all():
-            domain.limit = QUEUE_LIMIT
-            session.add(domain)
-            session.commit()
-
-
 def delete_message(_, context: CallbackContext):
     context.bot.delete_message(context.user_data['id'], int(context.match.string.split()[-1]))
