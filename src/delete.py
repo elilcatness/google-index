@@ -53,6 +53,9 @@ class DomainDelete:
     def delete(_, context: CallbackContext):
         with db_session.create_session() as session:
             domain = session.query(Domain).get(context.user_data['domain_id'])
+            for q in session.query(Queue).filter(Queue.domain_id == domain.id):
+                session.delete(q)
+                session.commit()
             url = domain.url
             session.delete(domain)
             session.commit()
