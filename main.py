@@ -4,7 +4,7 @@ from datetime import time
 
 from pytz import utc
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
-                          CallbackQueryHandler, ConversationHandler, CallbackContext)
+                          CallbackQueryHandler, ConversationHandler, CallbackContext, Dispatcher)
 
 from src.add import Addition
 from src.db import db_session
@@ -26,8 +26,6 @@ def load_states(updater: Updater, conv_handler: ConversationHandler):
             updater.dispatcher.user_data[state.user_id] = user_data
             context = CallbackContext(updater.dispatcher)
             context._bot = updater.bot
-            t = time(3, tzinfo=utc)
-            print(f'{t=}')
             for job in updater.dispatcher.job_queue.get_jobs_by_name(str(state.user_id)):
                 job.schedule_removal()
             context.job_queue.run_once(process_queue, 1, name=str(state.user_id),
@@ -54,7 +52,8 @@ def main():
             'addition.json_keys': [MessageHandler(Filters.text | Filters.document, Addition.finish),
                                    CallbackQueryHandler(Addition.ask_password, pattern='back')],
             'edit_menu': [CallbackQueryHandler(DomainEdit.show_all, pattern='edit_domains'),
-                          CallbackQueryHandler(QueueEdit.show_all_domains, pattern='edit_queues')],
+                          CallbackQueryHandler(QueueEdit.show_all_domains, pattern='edit_queues'),
+                          CallbackQueryHandler(menu, pattern='back')],
             'domain_edit.show_all': [CallbackQueryHandler(DomainEdit.show_domain_properties, pattern=r'[0-9]+'),
                                      CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
                                      CallbackQueryHandler(DomainEdit.show_all, pattern='refresh'),

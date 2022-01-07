@@ -179,7 +179,7 @@ def process_queue(context: CallbackContext):
                         user_id, f,
                         caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
                                 f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                                f'Проиндексировано <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
+                                f'Отправлено URL <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
                         reply_markup=markup, parse_mode=ParseMode.HTML)
                     if not markup_with_edit:
                         markup_with_edit = InlineKeyboardMarkup(
