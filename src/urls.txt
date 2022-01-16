@@ -1,2 +1,0 @@
-http://elilcat-vit.herokuapp.com
-http://elilcat-vit.herokuapp.com/auth
