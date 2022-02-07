@@ -169,7 +169,7 @@ def process_queue(context: CallbackContext):
                 schedule_delete = True
             if not queue.limit_message_sent:
                 dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '~').split('.')[0]
-                filename = f'{queue.domain.url.split("//")[1]}_{queue.number}_{dt}.csv'
+                filename = f'{queue.domain.url.split("//")[1].replace("/", "")}_{queue.number}_{dt}.csv'
                 print(f'{output=}')
                 with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
                     writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
