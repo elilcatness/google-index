@@ -109,6 +109,9 @@ def main():
                           CallbackQueryHandler(QueueView.show_all_domains, pattern='view_queues'),
                           CallbackQueryHandler(menu, pattern='back')],
             'domain_view.show_all': [CallbackQueryHandler(DomainView.show_info, pattern=r'[0-9]+'),
+                                     CallbackQueryHandler(DomainGeneral.set_next_page, pattern='next_page'),
+                                     CallbackQueryHandler(DomainGeneral.show_all, pattern='refresh'),
+                                     CallbackQueryHandler(DomainGeneral.set_previous_page, pattern='prev_page'),
                                      CallbackQueryHandler(view_menu, pattern='back')],
             'domain_view.info': [CallbackQueryHandler(DomainView.show_all, pattern='back')],
             'queue_view.show_all_domains': [
