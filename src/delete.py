@@ -63,6 +63,21 @@ class DomainDelete:
                                  disable_web_page_preview=True)
         return DomainDelete.show_all(_, context)
 
+    @staticmethod
+    def set_next_page(_, context):
+        DomainGeneral.set_next_page(_, context)
+        return DomainDelete.show_all(_, context)
+
+    @staticmethod
+    def set_previous_page(_, context):
+        DomainGeneral.set_previous_page(_, context)
+        return DomainDelete.show_all(_, context)
+
+    @staticmethod
+    def set_page(update, context):
+        DomainGeneral.set_page(update, context)
+        return DomainDelete.show_all(update, context)
+
 
 class QueueDelete:
     @staticmethod
@@ -115,3 +130,33 @@ class QueueDelete:
                                                           'была успешно удалена',
                                  parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         return QueueDelete.show_all(_, context)
+
+    @staticmethod
+    def set_next_page_domain(_, context):
+        DomainGeneral.set_next_page(_, context)
+        return QueueDelete.show_all_domains(_, context)
+
+    @staticmethod
+    def set_previous_page_domain(_, context):
+        DomainGeneral.set_previous_page(_, context)
+        return QueueDelete.show_all_domains(_, context)
+
+    @staticmethod
+    def set_page_domain(update, context):
+        DomainGeneral.set_page(update, context)
+        return QueueDelete.show_all_domains(update, context)
+
+    @staticmethod
+    def set_next_page(_, context):
+        QueueGeneral.set_next_page(_, context)
+        return QueueDelete.show_all(_, context)
+
+    @staticmethod
+    def set_previous_page(_, context):
+        QueueGeneral.set_previous_page(_, context)
+        return QueueDelete.show_all(_, context)
+
+    @staticmethod
+    def set_page(update, context):
+        QueueGeneral.set_page(update, context)
+        return QueueDelete.show_all(update, context)

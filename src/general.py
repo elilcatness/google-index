@@ -4,11 +4,12 @@ from src.constants import PAGINATION_STEP
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
-from src.utils import build_pagination
+from src.utils import build_pagination, delete_last_message
 
 
 class DomainGeneral:
     @staticmethod
+    @delete_last_message
     def show_all(_, context, with_main_menu: bool = True):
         with db_session.create_session() as session:
             data = [(d.url, d.id) for d in
@@ -26,12 +27,10 @@ class DomainGeneral:
     @staticmethod
     def set_next_page(_, context):
         context.user_data['domain_pagination'] += 1
-        return DomainGeneral.show_all(_, context)
 
     @staticmethod
     def set_previous_page(_, context):
         context.user_data['domain_pagination'] -= 1
-        return DomainGeneral.show_all(_, context)
 
     @staticmethod
     def set_page(update, context):
@@ -40,7 +39,6 @@ class DomainGeneral:
             update.message.reply_text('Введён неверный номер страницы')
         else:
             context.user_data['domain_pagination'] = n
-        return DomainGeneral.show_all(update, context)
 
 
 class QueueGeneral:
@@ -65,12 +63,10 @@ class QueueGeneral:
     @staticmethod
     def set_next_page(_, context):
         context.user_data['queue_pagination'] += 1
-        return DomainGeneral.show_all(_, context)
 
     @staticmethod
     def set_previous_page(_, context):
         context.user_data['queue_pagination'] -= 1
-        return DomainGeneral.show_all(_, context)
 
     @staticmethod
     def set_page(update, context):
@@ -79,4 +75,3 @@ class QueueGeneral:
             update.message.reply_text('Введён неверный номер страницы')
         else:
             context.user_data['queue_pagination'] = n
-        return DomainGeneral.show_all(update, context)

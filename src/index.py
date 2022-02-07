@@ -23,6 +23,21 @@ class DomainIndex:
         return context.bot.send_message(*args, **kwargs), 'domain_index.show_all'
 
     @staticmethod
+    def set_next_page(_, context):
+        DomainGeneral.set_next_page(_, context)
+        return DomainIndex.show_all(_, context)
+
+    @staticmethod
+    def set_previous_page(_, context):
+        DomainGeneral.set_previous_page(_, context)
+        return DomainIndex.show_all(_, context)
+
+    @staticmethod
+    def set_page(update, context):
+        DomainGeneral.set_page(update, context)
+        return DomainIndex.show_all(update, context)
+
+    @staticmethod
     @delete_last_message
     def ask_mode(_, context: CallbackContext):
         if context.match and context.match.string.isdigit():

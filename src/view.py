@@ -49,6 +49,21 @@ class DomainView:
                 '\n'.join([f'<b>{val}:</b> {getattr(domain, key)}' for key, val in domain.verbose_names.items()]),
                 reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True), 'domain_view.info')
 
+    @staticmethod
+    def set_next_page(_, context):
+        DomainGeneral.set_next_page(_, context)
+        return DomainView.show_all(_, context)
+
+    @staticmethod
+    def set_previous_page(_, context):
+        DomainGeneral.set_previous_page(_, context)
+        return DomainView.show_all(_, context)
+
+    @staticmethod
+    def set_page(update, context):
+        DomainGeneral.set_page(update, context)
+        return DomainView.show_all(update, context)
+
 
 class QueueView:
     @staticmethod
@@ -109,3 +124,33 @@ class QueueView:
         msg.edit_reply_markup(markup)
         context.user_data['messages_to_delete'] = messages_to_delete[:-1]
         return msg, 'queue_view.info'
+
+    @staticmethod
+    def set_next_page_domain(_, context):
+        DomainGeneral.set_next_page(_, context)
+        return QueueView.show_all_domains(_, context)
+
+    @staticmethod
+    def set_previous_page_domain(_, context):
+        DomainGeneral.set_previous_page(_, context)
+        return QueueView.show_all_domains(_, context)
+
+    @staticmethod
+    def set_page_domain(update, context):
+        DomainGeneral.set_page(update, context)
+        return QueueView.show_all_domains(update, context)
+
+    @staticmethod
+    def set_next_page(_, context):
+        QueueGeneral.set_next_page(_, context)
+        return QueueView.show_all(_, context)
+
+    @staticmethod
+    def set_previous_page(_, context):
+        QueueGeneral.set_previous_page(_, context)
+        return QueueView.show_all(_, context)
+
+    @staticmethod
+    def set_page(update, context):
+        QueueGeneral.set_page(update, context)
+        return QueueView.show_all(update, context)
