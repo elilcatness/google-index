@@ -9,7 +9,6 @@ from src.utils import build_pagination, delete_last_message
 
 class DomainGeneral:
     @staticmethod
-    @delete_last_message
     def show_all(_, context, with_main_menu: bool = True):
         with db_session.create_session() as session:
             data = [(d.url, d.id) for d in

@@ -2,6 +2,7 @@ import json
 import os
 from datetime import time
 
+from dotenv import load_dotenv
 from pytz import utc
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
                           CallbackQueryHandler, ConversationHandler, CallbackContext, Dispatcher)
@@ -156,5 +157,6 @@ def main():
 
 
 if __name__ == '__main__':
+    load_dotenv()
     db_session.global_init(os.getenv('DATABASE_URL'))
     main()
