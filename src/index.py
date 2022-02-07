@@ -113,7 +113,7 @@ class DomainIndex:
             domain = session.query(Domain).get(context.user_data['domain_id'])
             domain_url = domain.url
             last_n = len(session.query(Queue).filter(
-                (Queue.user_id == context.user_data['id']) & (Queue.domain_id == context.user_data['domain_id'])).all())
+                Queue.domain_id == context.user_data['domain_id']).all())
             for i, group in enumerate(groups):
                 session.add(Queue(user_id=context.user_data['id'],
                                   domain_id=context.user_data['domain_id'],
@@ -141,7 +141,7 @@ class DomainIndex:
 def process_queue(context: CallbackContext):
     user_id = int(context.job.name)
     with db_session.create_session() as session:
-        for queue in session.query(Queue).filter((Queue.user_id == user_id) & (Queue.is_broken == False)).all():
+        for queue in session.query(Queue).filter(Queue.is_broken == False).all():
             markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
             markup_with_edit = None
             if (queue.domain.out_of_limit and queue.last_request and (

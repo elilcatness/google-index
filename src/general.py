@@ -12,7 +12,7 @@ class DomainGeneral:
     def show_all(_, context, with_main_menu: bool = True):
         with db_session.create_session() as session:
             data = [(d.url, d.id) for d in
-                    session.query(Domain).filter(Domain.user_id == context.user_data['id']).all()]
+                    session.query(Domain).all()]
         if not context.user_data.get('domain_pagination'):
             context.user_data['domain_pagination'] = 1
         markup, pages_count = build_pagination(
@@ -46,8 +46,7 @@ class QueueGeneral:
         with db_session.create_session() as session:
             data = [(f'#{q.number}', q.id) for q in
                     session.query(Queue).filter(
-                        (Queue.user_id == context.user_data['id']) &
-                        (Queue.domain_id == context.user_data['domain_id'])).all()]
+                        Queue.domain_id == context.user_data['domain_id']).all()]
             print(f'{data=}')
         if not context.user_data.get('queue_pagination'):
             context.user_data['queue_pagination'] = 1
