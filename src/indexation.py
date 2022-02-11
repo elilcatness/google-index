@@ -63,23 +63,21 @@ class GoogleIndexationAPI:
             user_id = queue.user_id
             session.add(queue)
             session.commit()
-        output = ([['URL', 'METHOD', 'STATUS_CODE', 'ERROR_MESSAGE', 'ERROR_STATUS']]
-                  if not self.prev_data else self.prev_data[:])
-        urls_list_length = len(self.urls_list)
-        if urls_list_length == 0:
-            return output
-        for i in range(urls_list_length):
-            result = self.single_request_index(self.urls_list.pop(0))
-            print(user_id, result)
-            if result[2] == 429:
-                print()
-                return [[el.strip() if isinstance(el, str) else el for el in x] for x in output], 'out-of-limit'
-            log = result[0:3]
-            if result[2] != 200:
-                log.extend(self.parse_response(result[3]))
-            output.append(log)
-            with db_session.create_session() as session:
-                queue = session.query(Queue).get(self.queue_id)
+            output = ([['URL', 'METHOD', 'STATUS_CODE', 'ERROR_MESSAGE', 'ERROR_STATUS']]
+                      if not self.prev_data else self.prev_data[:])
+            urls_list_length = len(self.urls_list)
+            if urls_list_length == 0:
+                return output
+            for i in range(urls_list_length):
+                result = self.single_request_index(self.urls_list.pop(0))
+                print(user_id, result)
+                if result[2] == 429:
+                    print()
+                    return [[el.strip() if isinstance(el, str) else el for el in x] for x in output], 'out-of-limit'
+                log = result[0:3]
+                if result[2] != 200:
+                    log.extend(self.parse_response(result[3]))
+                output.append(log)
                 queue.urls = ','.join(self.urls_list)
                 queue.data = json.dumps(output)
                 session.add(queue)
