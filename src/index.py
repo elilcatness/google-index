@@ -2,7 +2,7 @@ import csv
 import os
 from datetime import datetime
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode, Document
 from telegram.ext import CallbackContext
 
 from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER, QUEUE_LIMIT_CHECK_RATE
@@ -196,12 +196,13 @@ def process_queue(context: CallbackContext):
                     if log[-2] == 200:
                         sent_count += 1
                 for user_id in user_ids:
-                    msg = context.bot.send_document(
-                        user_id, filename,
-                        caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
-                                f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                                f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
-                        reply_markup=markup, parse_mode=ParseMode.HTML)
+                    with open(filename, 'rb') as f:
+                        msg = context.bot.send_document(
+                            user_id, f,
+                            caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
+                                    f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                                    f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
+                            reply_markup=markup, parse_mode=ParseMode.HTML)
                     if not markup_with_edit:
                         markup_with_edit = InlineKeyboardMarkup(
                             [[InlineKeyboardButton('Удалить сообщение',
