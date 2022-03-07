@@ -195,21 +195,20 @@ def process_queue(context: CallbackContext):
                 for log in output:
                     if log[-2] == 200:
                         sent_count += 1
-                with open(filename, encoding='utf-8') as f:
-                    for user_id in user_ids:
-                        msg = context.bot.send_document(
-                            user_id, f,
-                            caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
-                                    f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                                    f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
-                            reply_markup=markup, parse_mode=ParseMode.HTML)
-                        if not markup_with_edit:
-                            markup_with_edit = InlineKeyboardMarkup(
-                                [[InlineKeyboardButton('Удалить сообщение',
-                                                       callback_data=f'delete {msg.message_id}'),
-                                  InlineKeyboardButton('Показать меню',
-                                                       callback_data='menu')]])
-                        msg.edit_reply_markup(markup_with_edit)
+                for user_id in user_ids:
+                    msg = context.bot.send_document(
+                        user_id, filename,
+                        caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
+                                f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                                f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
+                        reply_markup=markup, parse_mode=ParseMode.HTML)
+                    if not markup_with_edit:
+                        markup_with_edit = InlineKeyboardMarkup(
+                            [[InlineKeyboardButton('Удалить сообщение',
+                                                   callback_data=f'delete {msg.message_id}'),
+                              InlineKeyboardButton('Показать меню',
+                                                   callback_data='menu')]])
+                    msg.edit_reply_markup(markup_with_edit)
                     if status == 'OK':
                         queue.is_broken = True
                         session.add(queue)
