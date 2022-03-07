@@ -9,6 +9,7 @@ from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
+from src.db.models.state import State
 from src.general import DomainGeneral
 from src.indexation import GoogleIndexationAPI
 from src.utils import delete_last_message
@@ -139,8 +140,8 @@ class DomainIndex:
 
 
 def process_queue(context: CallbackContext):
-    user_id = int(context.job.name)
     with db_session.create_session() as session:
+        user_ids = [state.user_id for state in session.query(State).all()]
         for queue in session.query(Queue).filter(Queue.is_broken == False).all():
             markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
             markup_with_edit = None
@@ -152,17 +153,18 @@ def process_queue(context: CallbackContext):
             try:
                 output, status = api.indexation_worker()
             except Exception as e:
-                msg = context.bot.send_message(user_id,
-                                               f'<b>Очередь #{queue.number}</b> домена {queue.domain.url}\n\n'
-                                               f'<b>Возникла ошибка:</b> {str(e)}',
-                                               disable_web_page_preview=True, parse_mode=ParseMode.HTML,
-                                               reply_markup=markup)
-                markup_with_edit = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton('Удалить сообщение',
-                                           callback_data=f'delete {msg.message_id}'),
-                      InlineKeyboardButton('Показать меню',
-                                           callback_data='menu')]])
-                msg.edit_reply_markup(markup_with_edit)
+                for user_id in user_ids:
+                    msg = context.bot.send_message(user_id,
+                                                   f'<b>Очередь #{queue.number}</b> домена {queue.domain.url}\n\n'
+                                                   f'<b>Возникла ошибка:</b> {str(e)}',
+                                                   disable_web_page_preview=True, parse_mode=ParseMode.HTML,
+                                                   reply_markup=markup)
+                    markup_with_edit = InlineKeyboardMarkup(
+                        [[InlineKeyboardButton('Удалить сообщение',
+                                               callback_data=f'delete {msg.message_id}'),
+                          InlineKeyboardButton('Показать меню',
+                                               callback_data='menu')]])
+                    msg.edit_reply_markup(markup_with_edit)
                 queue.is_broken = True
                 session.add(queue)
                 session.commit()
@@ -190,19 +192,20 @@ def process_queue(context: CallbackContext):
                     writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
                     writer.writerows(output)
                 with open(filename, encoding='utf-8') as f:
-                    msg = context.bot.send_document(
-                        user_id, f,
-                        caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
-                                f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                                f'Отправлено URL <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
-                        reply_markup=markup, parse_mode=ParseMode.HTML)
-                    if not markup_with_edit:
-                        markup_with_edit = InlineKeyboardMarkup(
-                            [[InlineKeyboardButton('Удалить сообщение',
-                                                   callback_data=f'delete {msg.message_id}'),
-                              InlineKeyboardButton('Показать меню',
-                                                   callback_data='menu')]])
-                    msg.edit_reply_markup(markup_with_edit)
+                    for user_id in user_ids:
+                        msg = context.bot.send_document(
+                            user_id, f,
+                            caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
+                                    f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                                    f'Отправлено URL <b>{len(output) - 1}</b> из <b>{queue.start_length}</b>',
+                            reply_markup=markup, parse_mode=ParseMode.HTML)
+                        if not markup_with_edit:
+                            markup_with_edit = InlineKeyboardMarkup(
+                                [[InlineKeyboardButton('Удалить сообщение',
+                                                       callback_data=f'delete {msg.message_id}'),
+                                  InlineKeyboardButton('Показать меню',
+                                                       callback_data='menu')]])
+                        msg.edit_reply_markup(markup_with_edit)
                     if status == 'OK':
                         queue.is_broken = True
                         session.add(queue)
@@ -218,4 +221,4 @@ def process_queue(context: CallbackContext):
             if schedule_delete:
                 session.delete(queue)
                 session.commit()
-    context.job_queue.run_once(process_queue, 5, name=str(user_id))
+    context.job_queue.run_once(process_queue, 5)
