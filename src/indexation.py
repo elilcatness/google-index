@@ -33,6 +33,7 @@ class GoogleIndexationAPI:
         return domains
 
     def single_request_index(self, url):
+        print(f'URL passed to single_request_index: {url}')
         api_scopes = ["https://www.googleapis.com/auth/indexing"]
         api_endpoint = "https://indexing.googleapis.com/v3/urlNotifications:publish"
         credentials = ServiceAccountCredentials.from_json_keyfile_dict(self.cred_data, scopes=api_scopes)
