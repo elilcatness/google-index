@@ -193,7 +193,7 @@ def process_queue(context: CallbackContext):
                     writer.writerows(output)
                 sent_count = 0
                 for log in output:
-                    if log[-2] == 200:
+                    if log[-1] == 200:
                         sent_count += 1
                 for user_id in user_ids:
                     with open(filename, 'rb') as f:
