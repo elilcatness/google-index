@@ -26,10 +26,9 @@ def load_states(updater: Updater, conv_handler: ConversationHandler):
             updater.dispatcher.user_data[state.user_id] = user_data
             context = CallbackContext(updater.dispatcher)
             context._bot = updater.bot
-            for job in updater.dispatcher.job_queue.get_jobs_by_name(str(state.user_id)):
+            for job in updater.dispatcher.job_queue.get_jobs_by_name('process'):
                 job.schedule_removal()
-            context.job_queue.run_once(process_queues, 1, name=str(state.user_id),
-                                       context=context)
+            context.job_queue.run_once(process_queues, 1, name='process', context=context)
 
 
 def main():

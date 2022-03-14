@@ -135,8 +135,8 @@ class DomainIndex:
         msg.edit_reply_markup(InlineKeyboardMarkup(
             [[InlineKeyboardButton('Удалить сообщение', callback_data=f'delete {msg.message_id}'),
               InlineKeyboardButton('Показать меню', callback_data='menu')]]))
-        if not context.job_queue.get_jobs_by_name(str(context.user_data['id'])):
-            context.job_queue.run_once(process_queues, 1, name=str(context.user_data['id']))
+        if not context.job_queue.get_jobs_by_name('process_queues'):
+            context.job_queue.run_once(process_queues, 1, name='process_queues')
         return DomainIndex.show_all(_, context)
 
 
@@ -226,12 +226,11 @@ def process_queue(context: CallbackContext, session, queue: Queue, user_ids: lis
 
 
 def process_queues(context: CallbackContext):
-    while True:
-        with db_session.create_session() as session:
-            queues = session.query(Queue).filter(Queue.is_broken == False).all()
-            print(f'Current queues: {queues}')
-            user_ids = [state.user_id for state in session.query(State).all()]
-            for queue in queues:
-                process_queue(context, session, queue, user_ids)
-            print()
-        time.sleep(10)
+    with db_session.create_session() as session:
+        queues = session.query(Queue).filter(Queue.is_broken == False).all()
+        print(f'Current queues: {queues}')
+        user_ids = [state.user_id for state in session.query(State).all()]
+        for queue in queues:
+            process_queue(context, session, queue, user_ids)
+        print()
+    context.job_queue.run_once(process_queues, 10, name='process_queues')
