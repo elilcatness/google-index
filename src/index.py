@@ -1,5 +1,6 @@
 import csv
 import os
+import time
 from datetime import datetime
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode, Document
@@ -225,11 +226,12 @@ def process_queue(context: CallbackContext, session, queue: Queue, user_ids: lis
 
 
 def process_queues(context: CallbackContext):
-    with db_session.create_session() as session:
-        queues = session.query(Queue).filter(Queue.is_broken == False).all()
-        print(f'Current queues: {queues}')
-        user_ids = [state.user_id for state in session.query(State).all()]
-        for queue in queues:
-            process_queue(context, session, queue, user_ids)
-        print()
-    context.job_queue.run_once(process_queues, 10)
+    while True:
+        with db_session.create_session() as session:
+            queues = session.query(Queue).filter(Queue.is_broken == False).all()
+            print(f'Current queues: {queues}')
+            user_ids = [state.user_id for state in session.query(State).all()]
+            for queue in queues:
+                process_queue(context, session, queue, user_ids)
+            print()
+        time.sleep(10)
