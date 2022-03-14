@@ -12,7 +12,7 @@ from src.db.models.state import State
 from src.delete import DomainDelete, delete_menu, QueueDelete
 from src.edit import DomainEdit, edit_menu, QueueEdit
 from src.general import DomainGeneral, QueueGeneral
-from src.index import DomainIndex, process_queue
+from src.index import DomainIndex, process_queues
 from src.start import menu
 from src.utils import delete_message
 from src.view import view_menu, DomainView, QueueView
@@ -28,7 +28,7 @@ def load_states(updater: Updater, conv_handler: ConversationHandler):
             context._bot = updater.bot
             for job in updater.dispatcher.job_queue.get_jobs_by_name(str(state.user_id)):
                 job.schedule_removal()
-            context.job_queue.run_once(process_queue, 1, name=str(state.user_id),
+            context.job_queue.run_once(process_queues, 1, name=str(state.user_id),
                                        context=context)
 
 

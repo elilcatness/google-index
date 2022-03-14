@@ -20,3 +20,9 @@ class Queue(SqlAlchemyBase):
     in_progress = Column(Boolean, default=False)
     is_broken = Column(Boolean, default=False)
     limit_message_sent = Column(Boolean, default=False)
+
+    def __str__(self):
+        return f'Queue #{self.number} of domain {self.domain.url}'
+
+    def __repr__(self):
+        return self.__str__()

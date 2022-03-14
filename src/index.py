@@ -135,94 +135,101 @@ class DomainIndex:
             [[InlineKeyboardButton('Удалить сообщение', callback_data=f'delete {msg.message_id}'),
               InlineKeyboardButton('Показать меню', callback_data='menu')]]))
         if not context.job_queue.get_jobs_by_name(str(context.user_data['id'])):
-            context.job_queue.run_once(process_queue, 1, name=str(context.user_data['id']))
+            context.job_queue.run_once(process_queues, 1, name=str(context.user_data['id']))
         return DomainIndex.show_all(_, context)
 
 
-def process_queue(context: CallbackContext):
+def process_queue(context: CallbackContext, session, queue: Queue, user_ids: list):
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
+    markup_with_edit = None
+    if (queue.domain.out_of_limit and queue.last_request and (
+            datetime.utcnow() - queue.last_request).total_seconds() < QUEUE_LIMIT_CHECK_RATE):
+        return
+    api = GoogleIndexationAPI(queue.id, queue.domain.json_keys, queue.urls.split(','),
+                              queue.domain.url, queue.method, queue.data)
+    try:
+        output, status = api.indexation_worker()
+    except Exception as e:
+        for user_id in user_ids:
+            msg = context.bot.send_message(user_id,
+                                           f'<b>Очередь #{queue.number}</b> домена {queue.domain.url}\n\n'
+                                           f'<b>Возникла ошибка:</b> {str(e)}',
+                                           disable_web_page_preview=True, parse_mode=ParseMode.HTML,
+                                           reply_markup=markup)
+            markup_with_edit = InlineKeyboardMarkup(
+                [[InlineKeyboardButton('Удалить сообщение',
+                                       callback_data=f'delete {msg.message_id}'),
+                  InlineKeyboardButton('Показать меню',
+                                       callback_data='menu')]])
+            msg.edit_reply_markup(markup_with_edit)
+        queue.is_broken = True
+        session.add(queue)
+        session.commit()
+        return
+    if status == 'out-of-limit':
+        queue.domain.out_of_limit = True
+        queue.last_request = datetime.utcnow()
+        session.add(queue)
+        session.add(queue.domain)
+        session.commit()
+        msg_text = f'прервана ввиду превышения лимита в {QUEUE_LIMIT} запросов в {QUEUE_LIMIT_PER}'
+        schedule_delete = False
+    else:
+        if queue.domain.out_of_limit:
+            queue.domain.out_of_limit = False
+        if queue.limit_message_sent:
+            queue.limit_message_sent = False
+        msg_text = f'успешно обработана!'
+        schedule_delete = True
+    if not queue.limit_message_sent:
+        dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '~').split('.')[0]
+        filename = f'{queue.domain.url.split("//")[1].replace("/", "")}_{queue.number}_{dt}.csv'
+        print(f'{output=}')
+        with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
+            writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
+            writer.writerows(output)
+        sent_count = 0
+        for log in output:
+            if log[-1] == 200:
+                sent_count += 1
+        for user_id in user_ids:
+            with open(filename, 'rb') as f:
+                msg = context.bot.send_document(
+                    user_id, f,
+                    caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
+                            f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
+                            f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
+                    reply_markup=markup, parse_mode=ParseMode.HTML)
+            if not markup_with_edit:
+                markup_with_edit = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton('Удалить сообщение',
+                                           callback_data=f'delete {msg.message_id}'),
+                      InlineKeyboardButton('Показать меню',
+                                           callback_data='menu')]])
+            msg.edit_reply_markup(markup_with_edit)
+        if status == 'OK':
+            queue.is_broken = True
+            session.add(queue)
+            session.commit()
+        if queue.domain.out_of_limit:
+            queue.limit_message_sent = True
+            session.add(queue)
+            session.commit()
+        try:
+            os.remove(filename)
+        except PermissionError:
+            pass
+    if schedule_delete:
+        session.delete(queue)
+        session.commit()
+
+
+def process_queues(context: CallbackContext):
     with db_session.create_session() as session:
+        queues = session.query(Queue).filter(Queue.is_broken == False).all()
+        print(f'Current queues: {queues}')
         user_ids = [state.user_id for state in session.query(State).all()]
-        for queue in session.query(Queue).filter(Queue.is_broken == False).all():
-            markup = InlineKeyboardMarkup([[InlineKeyboardButton('Показать меню', callback_data='menu')]])
-            markup_with_edit = None
-            if (queue.domain.out_of_limit and queue.last_request and (
-                    datetime.utcnow() - queue.last_request).total_seconds() < QUEUE_LIMIT_CHECK_RATE):
-                continue
-            api = GoogleIndexationAPI(queue.id, queue.domain.json_keys, queue.urls.split(','),
-                                      queue.domain.url, queue.method, queue.data)
-            try:
-                output, status = api.indexation_worker()
-            except Exception as e:
-                for user_id in user_ids:
-                    msg = context.bot.send_message(user_id,
-                                                   f'<b>Очередь #{queue.number}</b> домена {queue.domain.url}\n\n'
-                                                   f'<b>Возникла ошибка:</b> {str(e)}',
-                                                   disable_web_page_preview=True, parse_mode=ParseMode.HTML,
-                                                   reply_markup=markup)
-                    markup_with_edit = InlineKeyboardMarkup(
-                        [[InlineKeyboardButton('Удалить сообщение',
-                                               callback_data=f'delete {msg.message_id}'),
-                          InlineKeyboardButton('Показать меню',
-                                               callback_data='menu')]])
-                    msg.edit_reply_markup(markup_with_edit)
-                queue.is_broken = True
-                session.add(queue)
-                session.commit()
-                continue
-            if status == 'out-of-limit':
-                queue.domain.out_of_limit = True
-                queue.last_request = datetime.utcnow()
-                session.add(queue)
-                session.add(queue.domain)
-                session.commit()
-                msg_text = f'прервана ввиду превышения лимита в {QUEUE_LIMIT} запросов в {QUEUE_LIMIT_PER}'
-                schedule_delete = False
-            else:
-                if queue.domain.out_of_limit:
-                    queue.domain.out_of_limit = False
-                if queue.limit_message_sent:
-                    queue.limit_message_sent = False
-                msg_text = f'успешно обработана!'
-                schedule_delete = True
-            if not queue.limit_message_sent:
-                dt = datetime.utcnow().isoformat().replace(':', '_').replace('T', '~').split('.')[0]
-                filename = f'{queue.domain.url.split("//")[1].replace("/", "")}_{queue.number}_{dt}.csv'
-                print(f'{output=}')
-                with open(filename, 'w', newline='', encoding='utf-8') as csv_file:
-                    writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
-                    writer.writerows(output)
-                sent_count = 0
-                for log in output:
-                    if log[-1] == 200:
-                        sent_count += 1
-                for user_id in user_ids:
-                    with open(filename, 'rb') as f:
-                        msg = context.bot.send_document(
-                            user_id, f,
-                            caption=f'<b>Очередь #{queue.number}</b> домена {queue.domain.url} <b>{msg_text}</b>\n\n'
-                                    f'<b>Метод:</b> {queue.method.replace("_", " ")}\n\n'
-                                    f'Отправлено URL <b>{sent_count}</b> из <b>{queue.start_length}</b>',
-                            reply_markup=markup, parse_mode=ParseMode.HTML)
-                    if not markup_with_edit:
-                        markup_with_edit = InlineKeyboardMarkup(
-                            [[InlineKeyboardButton('Удалить сообщение',
-                                                   callback_data=f'delete {msg.message_id}'),
-                              InlineKeyboardButton('Показать меню',
-                                                   callback_data='menu')]])
-                    msg.edit_reply_markup(markup_with_edit)
-                if status == 'OK':
-                    queue.is_broken = True
-                    session.add(queue)
-                    session.commit()
-                if queue.domain.out_of_limit:
-                    queue.limit_message_sent = True
-                    session.add(queue)
-                    session.commit()
-                try:
-                    os.remove(filename)
-                except PermissionError:
-                    pass
-            if schedule_delete:
-                session.delete(queue)
-                session.commit()
-    context.job_queue.run_once(process_queue, 5)
+        for queue in queues:
+            process_queue(context, session, queue, user_ids)
+        print()
+    context.job_queue.run_once(process_queues, 10)
