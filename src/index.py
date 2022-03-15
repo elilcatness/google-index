@@ -208,10 +208,10 @@ def process_queue(context: CallbackContext, session, queue: Queue, user_ids: lis
                       InlineKeyboardButton('Показать меню',
                                            callback_data='menu')]])
             msg.edit_reply_markup(markup_with_edit)
-        if status == 'OK':
-            queue.is_broken = True
-            session.add(queue)
-            session.commit()
+        # if status == 'OK':
+        #     queue.is_broken = True
+        #     session.add(queue)
+        #     session.commit()
         if queue.domain.out_of_limit:
             queue.limit_message_sent = True
             session.add(queue)
@@ -222,6 +222,9 @@ def process_queue(context: CallbackContext, session, queue: Queue, user_ids: lis
             pass
     if schedule_delete:
         session.delete(queue)
+        session.commit()
+    else:
+        session.add(queue)
         session.commit()
 
 
