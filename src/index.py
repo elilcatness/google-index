@@ -6,7 +6,8 @@ from datetime import datetime
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode, Document
 from telegram.ext import CallbackContext
 
-from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER, QUEUE_LIMIT_CHECK_RATE
+from src.constants import QUEUE_LIMIT, CSV_DELIMITER, MESSAGE_MAX_LENGTH, QUEUE_LIMIT_PER, QUEUE_LIMIT_CHECK_RATE, \
+    NO_RIGHTS_MESSAGE
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
@@ -56,12 +57,12 @@ class DomainIndex:
     def get_queue(_, context: CallbackContext):
         if context.match:
             context.user_data['index_method'] = context.match.string
-        for method, env_var in ('URL_UPDATED', 'UPDATE_USERS'), ('URL_DELETED', 'DELETE_USERS'):
+        for method in 'URL_UPDATED', 'URL_DELETED':
             if context.user_data['index_method'] != method:
                 continue
-            if context.user_data['id'] not in [int(x) for x in os.getenv(env_var).split(';')
+            if context.user_data['id'] not in [int(x) for x in os.getenv(f'{method}_USERS', '').split(';')
                                                if x and x.strip().isdigit()]:
-                context.bot.send_message(context.user_data['id'], 'Вы не имеете доступа к данной функции')
+                context.bot.send_message(context.user_data['id'], NO_RIGHTS_MESSAGE)
                 return DomainIndex.ask_mode(_, context)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Вернуться назад', callback_data='back'),
                                         InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])

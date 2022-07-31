@@ -1,15 +1,22 @@
+import os
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from telegram.ext import CallbackContext
 
+from src.constants import NO_RIGHTS_MESSAGE
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
 from src.general import DomainGeneral, QueueGeneral
 from src.utils import delete_last_message
+from src.start import menu
 
 
 @delete_last_message
 def delete_menu(_, context: CallbackContext):
+    if context.user_data['id'] not in [int(x) for x in os.getenv(f'DELETE_USERS', '').split(';')
+                                       if x and x.strip().isdigit()]:
+        context.bot.send_message(context.user_data['id'], NO_RIGHTS_MESSAGE)
+        return menu(_, context)
     for key in 'domain_pagination', 'queue_pagination':
         if context.user_data.get(key):
             context.user_data.pop(key)
