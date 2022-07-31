@@ -56,6 +56,13 @@ class DomainIndex:
     def get_queue(_, context: CallbackContext):
         if context.match:
             context.user_data['index_method'] = context.match.string
+        for method, env_var in ('URL_UPDATED', 'UPDATE_USERS'), ('URL_DELETED', 'DELETE_USERS'):
+            if context.user_data['index_method'] != method:
+                continue
+            if context.user_data['id'] not in [int(x) for x in os.getenv(env_var).split(';')
+                                               if x and x.strip().isdigit()]:
+                context.bot.send_message(context.user_data['id'], 'Вы не имеете доступа к данной функции')
+                return DomainIndex.ask_mode(_, context)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Вернуться назад', callback_data='back'),
                                         InlineKeyboardButton('Вернуться в основное меню', callback_data='menu')]])
         return context.bot.send_message(
