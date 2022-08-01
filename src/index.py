@@ -14,7 +14,7 @@ from src.db.models.queue import Queue
 from src.db.models.state import State
 from src.general import DomainGeneral
 from src.indexation import GoogleIndexationAPI
-from src.utils import delete_last_message
+from src.utils import delete_last_message, check_user_permission
 
 
 class DomainIndex:
@@ -60,8 +60,7 @@ class DomainIndex:
         for method in 'URL_UPDATED', 'URL_DELETED':
             if context.user_data['index_method'] != method:
                 continue
-            if context.user_data['id'] not in [int(x) for x in os.getenv(f'{method}_USERS', '').split(';')
-                                               if x and x.strip().isdigit()]:
+            if not check_user_permission(context.user_data['id'], f'{method}_USERS'):
                 context.bot.send_message(context.user_data['id'], NO_RIGHTS_MESSAGE)
                 return DomainIndex.ask_mode(_, context)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('Вернуться назад', callback_data='back'),

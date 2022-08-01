@@ -1,4 +1,5 @@
 import json
+import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
@@ -72,3 +73,7 @@ def build_pagination(array: list[tuple], pag_step: int, current_page: int,
 
 def delete_message(_, context: CallbackContext):
     context.bot.delete_message(context.user_data['id'], int(context.match.string.split()[-1]))
+
+
+def check_user_permission(user_id: int, env_var: str):
+    return user_id in [int(x) for x in os.getenv(env_var, '').split(';') if x and x.strip().isdigit()]

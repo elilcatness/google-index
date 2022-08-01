@@ -3,16 +3,20 @@ import json
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update, ParseMode
 from telegram.ext import CallbackContext
 
-from src.constants import QUEUE_LIMIT
+from src.constants import QUEUE_LIMIT, NO_RIGHTS_MESSAGE
 from src.db import db_session
 from src.db.models.domain import Domain
 from src.db.models.queue import Queue
 from src.general import DomainGeneral, QueueGeneral
-from src.utils import delete_last_message
+from src.utils import delete_last_message, check_user_permission
+from src.start import menu
 
 
 @delete_last_message
 def edit_menu(_, context: CallbackContext):
+    if not check_user_permission(context.user_data['id'], 'EDIT_USERS'):
+        context.bot.send_message(context.user_data['id'], NO_RIGHTS_MESSAGE)
+        return menu(_, context)
     for key in 'domain_pagination', 'queue_pagination':
         if context.user_data.get(key):
             context.user_data.pop(key)
